@@ -10,12 +10,41 @@ ApplicationModule::ApplicationModule(int deviceID, QString applicationName, QWid
     ui->moduleName->setText(applicationName);
     ui->label_3->setText(applicationFunction);
     annualDetailsWidget = new AnnualDetails();
+
+    setupMonthlyRefresh(this, [this]() {
+        auto d = QDate::currentDate();
+        ui->label_month1->setText(QString("%1月份").arg(d.month()));
+        ui->label_month2->setText(QString("%1月份").arg(d.month()));
+        ui->label_year->setText(QString("%1年(统计)").arg(d.year()));
+    });
+
+
 }
 
 ApplicationModule::~ApplicationModule()
 {
     delete ui;
     delete annualDetailsWidget;
+}
+
+void ApplicationModule::setupMonthlyRefresh(QObject *parent, std::function<void ()> callback)
+{
+    auto timer = new QTimer(parent);
+    timer->setSingleShot(true);
+
+    auto reset = [timer]() {
+        auto now = QDateTime::currentDateTime();
+        auto next = QDateTime(QDate(now.date().year(), now.date().month(), 1).addMonths(1), QTime(0,0,0));
+        timer->start(now.msecsTo(next));
+    };
+
+    QObject::connect(timer, &QTimer::timeout, parent, [callback, reset]() {
+        callback();
+        reset();
+    });
+
+    callback();
+    reset();
 }
 
 void ApplicationModule::on_pushButton_clicked()
@@ -49,7 +78,7 @@ void ApplicationModule::on_AggregatedDataUpdated(int deviceId, const MonthlyData
 // 新增：接收12个月减碳数据
 void ApplicationModule::on_MonthlyCO2DataUpdated(int deviceId, const QVector<double> &monthlyCO2List)
 {
-    if (deviceId != 0x81) return;
+    if (deviceId != m_deviceId) return;
 
     if (monthlyCO2List.size() != 12) {
         qDebug() << "[on_MonthlyCO2DataUpdated] 数据长度错误:" << monthlyCO2List.size();

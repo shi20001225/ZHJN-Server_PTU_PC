@@ -3,6 +3,7 @@
 
 #include <QFrame>
 #include <QVector>
+#include <QTimer>
 
 #include "annualdetails.h"
 #include "monthlydatastore.h"
@@ -18,6 +19,9 @@ class ApplicationModule : public QFrame
 public:
     explicit ApplicationModule(int deviceId, QString applicationName, QWidget *parent = nullptr, QString applicationFunction = "节约用电:");
     ~ApplicationModule();
+
+    // 刷新月份显示
+    void setupMonthlyRefresh(QObject *parent, std::function<void()> callback);
 
 private slots:
     void on_pushButton_clicked();

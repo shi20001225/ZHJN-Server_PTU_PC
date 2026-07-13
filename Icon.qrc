@@ -1,0 +1,8 @@
+<RCC>
+    <qresource prefix="/new/prefix1">
+        <file>Icon/close.png</file>
+        <file>Icon/reduce.png</file>
+        <file>Icon/CNXT.svg</file>
+        <file>Icon/titleBackground.svg</file>
+    </qresource>
+</RCC>

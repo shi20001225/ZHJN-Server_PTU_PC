@@ -4,6 +4,11 @@
 #include <QFrame>
 #include <QVector>
 
+
+/*
+ * 具体节约月份界面
+ */
+
 namespace Ui {
 class AnnualDetails;
 }

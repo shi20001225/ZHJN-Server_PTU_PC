@@ -12,7 +12,7 @@ bool Pack::appendData(const QByteArray &data)
 }
 
 
-bool Pack::parsePacket(PowerData& parseData)
+bool Pack::parsePacket(PowerData& parseData, QString& ip)
 {
     while(!m_buffer.isEmpty() || m_buffer.size() >= 20)
     {
@@ -31,8 +31,6 @@ bool Pack::parsePacket(PowerData& parseData)
         }
         // 先读设备ID位判断包类型
         uint8_t devId = static_cast<uint8_t>(m_buffer.at(3));
-        qDebug() << "DevId: " << devId  << "   and JNZM_D: " << JNZM_D
-                 << "JNZM_D:" << QString("0x%1").arg(JNZM_D, 2, 16, QChar('0')).toUpper();;
         switch(devId)
         {
             case CNG_D:
@@ -50,6 +48,8 @@ bool Pack::parsePacket(PowerData& parseData)
         m_buffer.clear();
 
     }
+    out_pack.ip = ip;
+    out_pack.connectedStatus = true;
     parseData = out_pack;
     return true;
 }
@@ -155,7 +155,7 @@ bool Pack::parseSomeonePacket()
 
     out_pack.checksum = calcXorChecksum(m_buffer, 3, m_buffer.size() - 2);
     out_pack.timestamp = QDateTime::currentDateTime();
-    printsData("节能照明--有人数据解析");
+    // printsData("节能照明--有人数据解析");
     return true;
 }
 
@@ -196,13 +196,13 @@ bool Pack::parseNoonePacket()
 
     out_pack.checksum = calcXorChecksum(m_buffer, 3, m_buffer.size() - 2);
 
-    printsData("节能照明--无人数据解析");
+    // printsData("节能照明--无人数据解析");
     return true;
 }
 
 bool Pack::parseCNGDevice()
 {
-    qDebug() << "进入储能柜系统解析";
+    // qDebug() << "进入储能柜系统解析";
 
         const int CNG_PACKET_LENGTH = 87;
 
@@ -312,13 +312,13 @@ bool Pack::parseCNGDevice()
         out_pack.isValid = true;
         out_pack.errorMsg = nullptr;
 
-        printsData("储能柜系统数据解析");
+        // printsData("储能柜系统数据解析");
         return true;
 }
 
 bool Pack::parseJNZMDevice()
 {
-    qDebug()<< "进入节能照明解析";
+    // qDebug()<< "进入节能照明解析";
     if(m_buffer.at(5) != 0)
     {
         parseNoonePacket();
@@ -346,4 +346,3 @@ int Pack::findFrameHead()
     }
     return -1;
 }
-

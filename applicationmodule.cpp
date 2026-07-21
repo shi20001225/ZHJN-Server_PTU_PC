@@ -64,24 +64,28 @@ void ApplicationModule::on_AggregatedDataUpdated(int deviceId, const MonthlyData
 {
     if (deviceId == m_deviceId) {  // JNZM_D or JNKT_D or CNG_D
         // 月度聚合数据
-        ui->line_generateGreenElectricity->setText(QString::number(monthlyData.savedEnergy, 'f', 2));
-        ui->line_costSavings->setText(QString::number(monthlyData.savedCost, 'f', 2));
-        ui->line_month_carbonEmissions->setText(QString::number(monthlyData.reducedCO2, 'f', 2));
+        ui->line_generateGreenElectricity->setText(QString::number(monthlyData.savedEnergy, 'f', 3));
+        ui->line_costSavings->setText(QString::number(monthlyData.savedCost, 'f', 3));
+        ui->line_month_carbonEmissions->setText(QString::number(monthlyData.reducedCO2, 'f', 3));
 
         // 年度减碳排放量
-        ui->line_year_carbonEmissions->setText(QString::number(yearlyReducedCO2, 'f', 2));
+        ui->line_year_carbonEmissions->setText(QString::number(yearlyReducedCO2, 'f', 3));
+        qInfo() << "[刷新显示]"
+                << "  设备类型:" << monthlyData.deviceId
+                << "  节约用电:" << monthlyData.savedEnergy
+                << "  节约成本:" << monthlyData.savedCost
+                << "  月碳排放量减少:" << monthlyData.reducedCO2
+                << "  年碳排放量减少:" << yearlyReducedCO2;
     }
-
-    //qDebug() << QString("[applicationModule]显示的数据---节约用电：%1   节约成本：%2     月碳排放减少：%3    年碳排放减少：%4").arg(monthlyData.savedEnergy).arg(monthlyData.savedCost).arg(monthlyData.reducedCO2).arg(yearlyReducedCO2);
 }
 
-// 新增：接收12个月减碳数据
+// 接收12个月减碳数据
 void ApplicationModule::on_MonthlyCO2DataUpdated(int deviceId, const QVector<double> &monthlyCO2List)
 {
     if (deviceId != m_deviceId) return;
 
     if (monthlyCO2List.size() != 12) {
-        qDebug() << "[on_MonthlyCO2DataUpdated] 数据长度错误:" << monthlyCO2List.size();
+        qDebug() << "数据长度错误:" << monthlyCO2List.size();
         return;
     }
 

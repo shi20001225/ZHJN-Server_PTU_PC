@@ -9,9 +9,13 @@
 #include <QDateTime>
 #include <QMap>
 #include <QDebug>
+
 #include "pack.h"
+#include "logger.h"
 
 struct DeviceRecord {
+    QString clientIp;       // IP地址
+    bool connectedStatus;   //连接状态
     QString deviceNumber;   // 设备号 (BCD)
     QString cardNumber;     // 卡号
     quint8  server;         // 服务器
@@ -58,6 +62,7 @@ struct DeviceRecord {
     // 转成 JSON
     QJsonObject toJson() const {
         QJsonObject obj;
+        obj["clientIp"] = clientIp;
         obj["deviceNumber"] = deviceNumber;
         obj["cardNumber"] = cardNumber;
         obj["server"] = QString("0x%1").arg(server, 2, 16, QChar('0'));
@@ -101,6 +106,7 @@ struct DeviceRecord {
     // 从 JSON 解析
     static DeviceRecord fromJson(const QJsonObject &obj) {
         DeviceRecord rec;
+        rec.clientIp = obj["clientIp"].toString();
         rec.deviceNumber = obj["deviceNumber"].toString();
         rec.cardNumber = obj["cardNumber"].toString();
         rec.server = static_cast<quint8>(obj["server"].toString().toUInt(nullptr, 16));
@@ -155,8 +161,20 @@ public:
     // 添加或更新设备数据
     void updateDevice(const PowerData &record);
 
+    // 添加m_ipToDevice
+    void appendIpToDevice(QString ip, QString deviceNumber);
+
     // 更新储能柜系统的节约模式状态
     void updateSavingState(const QString &deviceNumber, bool isInSavingMode, double savingStartEnergy, const QDateTime &savingStartTime);
+
+    // 根据IP地址获取设备
+    DeviceRecord getDeviceByCIp(QString ip);
+
+    // 更新断开设备
+    void updateDisconnectedDevice(QString ip);
+
+    // 更新连接设备
+    void updateConnectedDevice(QString ip);
 
     // 根据设备号获取数据
     DeviceRecord getDeviceByNumber(const QString &deviceNumber) const;
@@ -182,6 +200,9 @@ public:
     // 获取设备数量
     int deviceCount() const;
 
+    // 更新最后更新的时间
+    void updateDeviceLastUpdate(const QString &deviceNumber);
+
 signals:
     void deviceUpdated(const QString &deviceNumber);
     void dataSaved(bool success);
@@ -189,6 +210,7 @@ signals:
 private:
     QString m_filePath;
     QMap<QString, DeviceRecord> m_devices;  // key = deviceNumber
+    QMap<QString, QString> m_ipToDevice;
 };
 
 #endif // JSONSTORE_H

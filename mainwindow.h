@@ -32,6 +32,7 @@ private slots:
 private:
     Ui::MainWindow *ui;
 
+
     QPoint m_dragPosition;
     bool m_isDragging = false;
     ApplicationModule *ktWidget;

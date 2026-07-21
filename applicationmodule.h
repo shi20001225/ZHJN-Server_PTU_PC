@@ -7,6 +7,7 @@
 
 #include "annualdetails.h"
 #include "monthlydatastore.h"
+#include "logger.h"
 
 namespace Ui {
 class ApplicationModule;

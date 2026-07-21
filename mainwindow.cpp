@@ -12,8 +12,8 @@ MainWindow::MainWindow(QWidget *parent)
     this->move((desktop.width() - this->width())/2,(desktop.height() - this->height())/2);
 
     gfWidget = new ApplicationModule(CNG_D,QString("绿电储能"), ui->GF_widget, QString("产生绿电:"));
-    zmWidget = new ApplicationModule(JNZM_D,QString("照明"), ui->ZM_widget);
-    ktWidget = new ApplicationModule(JNKT_D,QString("空调"), ui->KT_widget);
+    zmWidget = new ApplicationModule(JNZM_D,QString("照明节能"), ui->ZM_widget);
+    ktWidget = new ApplicationModule(JNKT_D,QString("空调节能"), ui->KT_widget);
 
     tcpserver = new My_TcpSocket(this);
 

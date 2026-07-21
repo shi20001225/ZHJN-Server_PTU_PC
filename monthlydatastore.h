@@ -1,4 +1,3 @@
-
 #ifndef MONTHLYDATASTORE_H
 #define MONTHLYDATASTORE_H
 
@@ -13,7 +12,7 @@
 #include <QDebug>
 
 /**
- * @brief 月度统计数据结构
+ *  月度统计数据结构
  */
 struct MonthlyData {
     QString deviceNumber;       // 设备号
@@ -30,7 +29,7 @@ struct MonthlyData {
     QDateTime lastUpdate;       // 最后更新时间
 
     MonthlyData()
-            : deviceId(0), savedEnergy(0), greenEnergy(0), savedCost(0), reducedCO2(0), updateCount(0) {}
+        : deviceId(0), savedEnergy(0), greenEnergy(0), savedCost(0), reducedCO2(0), updateCount(0) {}
 
     // 转成 JSON
     QJsonObject toJson() const {

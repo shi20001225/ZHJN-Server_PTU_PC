@@ -7,11 +7,14 @@
 #include <QDateTime>
 #include <QCoreApplication>
 #include <QVector>
+#include <QMessageBox>
+#include <QTimer>
 
 #include "jsonstore.h"
 #include "pack.h"
 #include "calculation.h"
 #include "monthlydatastore.h"
+#include "logger.h"
 
 class My_TcpSocket : public QTcpServer
 {
@@ -39,17 +42,18 @@ signals:
 
 
 public slots:
-    void onNewConnection();
-    void onReadyRead();
-    void onDisconnect();
+    void on_NewConnection();
+    void on_ReadyRead();
+    void on_Disconnect();
+    void on_TimerTimeout();
 
 private slots:
 
 
 private:
     QTcpServer *server;
-    QMap<QString,QString> map;
     QList<QTcpSocket*> clients;
+    QTimer *refreshTheInterface_10s;
 
     JsonStore *deviceDataStore;
     MonthlyDataStore *monthlyDataStore;

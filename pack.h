@@ -16,6 +16,8 @@ enum Device{
 };
 
 struct PowerData {
+        QString ip;             // IP地址
+        bool connectedStatus;   // 连接状态
         quint8  server;         // 服务器
         quint8  deviceId;       // 设备ID
         quint8  funcCode;       // 功能码
@@ -70,7 +72,7 @@ public:
     Pack();
 
     bool appendData(const QByteArray& data);
-    bool parsePacket(PowerData& parseData);
+    bool parsePacket(PowerData& parseData, QString& ip);
     quint8 calcXorChecksum(const QByteArray &data, int start, int end);
     quint16 parseUInt16BE(const QByteArray &ba, int offset);
     uint32_t parseUInt32_BE(const QByteArray &ba, int offset);

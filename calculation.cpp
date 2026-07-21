@@ -9,20 +9,16 @@ MonthlyData Calculation::calculate_JNZM(const DeviceRecord &lastData, const Powe
 {
     MonthlyData thisEnergySavingData;
     if (currentData.deviceId != JNZM_D) {
+        qInfo() << "[计算错误] 设备ID不为照明设备" << currentData.deviceId;
         return thisEnergySavingData;
     }
 
-    if(lastData.flag != 1 || currentData.flag != 0)
-    {
-        return thisEnergySavingData;
-    }
     thisEnergySavingData.deviceNumber = currentData.deviceNumber;
     thisEnergySavingData.yearMonth = QDateTime::currentDateTime().toString("yyyy-MM");
     thisEnergySavingData.deviceId = currentData.deviceId;
 
-    //计算秒级时间差
+    // 计算秒级时间差
     double hours = lastData.lastUpdate.secsTo(currentData.timestamp) / 3600.0;
-
 
     // 计算节约电量
     if(lastData.power <= 0)

@@ -10,8 +10,14 @@ My_TcpSocket::My_TcpSocket(QObject *parent)
 
     server = new QTcpServer(this);
     server->listen(QHostAddress::AnyIPv4,5540);
+    QString peerInfo = QString("%1:%2").arg(server->serverAddress().toString()).arg(server->serverPort());
+    qInfo() << "[服务器启动]" << peerInfo;
+    QObject::connect(server,&QTcpServer::newConnection,this,&My_TcpSocket::on_NewConnection);
 
-    QObject::connect(server,&QTcpServer::newConnection,this,&My_TcpSocket::onNewConnection);
+
+    refreshTheInterface_10s = new QTimer(this);
+    connect(refreshTheInterface_10s, &QTimer::timeout, this, &My_TcpSocket::on_TimerTimeout);
+    refreshTheInterface_10s->start(10000);
 
 }
 
@@ -38,28 +44,32 @@ void My_TcpSocket::refreshInitialDisplay()
     emit sig_MonthlyCO2DataUpdated(CNG_D, fghbMonthlyCO2);
 }
 
-//  解析照明数据
+//  计算照明节约数据
 bool My_TcpSocket::parsingData_ZM(const DeviceRecord &lastData, const PowerData &currentData)
 {
-    // 无人状态不需要计算，只需要记录
-    if(currentData.flag == 01)
+
+    if(lastData.flag == 0 || (currentData.flag == 0 && lastData.flag == 0) || !currentData.connectedStatus)
     {
+        qInfo() << "[计算]"
+                << "  上次无人:"  << lastData.flag
+                << "  两次相同:" <<  (currentData.flag == 0 && lastData.flag == 0)
+                << "  连接状态:" << lastData.connectedStatus;
         return false;
     }
+
 
     // 计算本次节约信息
     MonthlyData saveData_JNZM = calculationData.calculate_JNZM(lastData, currentData);
     // 加调试
-    qDebug() << "计算结果:"
-             << "deviceNumber:" << saveData_JNZM.deviceNumber
-             << "deviceId:" << QString("0x%1").arg(currentData.deviceId, 2, 16, QChar('0')).toUpper()
-             << "savedEnergy:" << saveData_JNZM.savedEnergy
-             << "reducedCO2:" << saveData_JNZM.reducedCO2;
+    qInfo() << "[计算]"
+            << "  设备号:" << saveData_JNZM.deviceNumber
+            << "  设备类型:" << currentData.deviceId
+            << "  节约电量:" << saveData_JNZM.savedEnergy
+            << "  节约月碳排放量:" << saveData_JNZM.reducedCO2;
 
     if(!saveData_JNZM.deviceNumber.isEmpty())
     {
-
-        //叠加本月的信息 和 年度减少碳排放量信息
+        //叠加本月的信息
         monthlyDataStore->addData(saveData_JNZM.deviceNumber,
                                   saveData_JNZM.yearMonth,
                                   JNZM_D,
@@ -67,11 +77,10 @@ bool My_TcpSocket::parsingData_ZM(const DeviceRecord &lastData, const PowerData 
                                   saveData_JNZM.greenEnergy,
                                   saveData_JNZM.savedCost,
                                   saveData_JNZM.reducedCO2);
-
     }
     else
     {
-        qDebug() << "计算结果为空，未保存";
+        qWarning() << "计算结果为空，未保存";
     }
     return true;
 }
@@ -79,15 +88,26 @@ bool My_TcpSocket::parsingData_ZM(const DeviceRecord &lastData, const PowerData 
 // 解析储能柜数据
 bool My_TcpSocket::parsingData_CNG(DeviceRecord &lastData, const PowerData &currentData)
 {
+    if(!currentData.connectedStatus)
+    {
+        return false;
+    }
     // 储能柜系统：calculate_CNG 会处理状态切换逻辑，并返回本次是否需要保存数据
     MonthlyData saveData_CNG = calculationData.calculate_CNG(lastData, currentData);
 
-    qDebug() << "储能柜计算结果:"
-             << "deviceNumber:" << saveData_CNG.deviceNumber
-             << "deviceId:" << QString("0x%1").arg(currentData.deviceId, 2, 16, QChar('0')).toUpper()
-             << "savedEnergy:" << saveData_CNG.savedEnergy
-             << "greenEnergy:" << saveData_CNG.greenEnergy
-             << "reducedCO2:" << saveData_CNG.reducedCO2;
+    qInfo() << QString("储能柜计算结果: \n"
+                       " deviceNumber: %1 \n"
+                       "deviceId: %2 \n"
+                       "savedEnergy: %3 \n"
+                       "greenEnergy: %4 \n"
+                       "reducedCO2: %5")
+               .arg(saveData_CNG.deviceNumber)
+               .arg(QString("0x%1").arg(currentData.deviceId, 2, 16, QChar('0')).toUpper())
+               .arg(saveData_CNG.savedEnergy)
+               .arg(saveData_CNG.greenEnergy)
+               .arg(saveData_CNG.reducedCO2);
+
+
 
     if (!saveData_CNG.deviceNumber.isEmpty()) {
         // 叠加本月的信息
@@ -101,135 +121,224 @@ bool My_TcpSocket::parsingData_CNG(DeviceRecord &lastData, const PowerData &curr
         return true;
     }
     else {
-        qDebug() << "储能柜计算结果为空，未保存";
+        qWarning() << "储能柜计算结果为空，未保存";
     }
     return false;
 }
 
-void My_TcpSocket::onNewConnection()
+void My_TcpSocket::on_TimerTimeout()
+{
+    // 获取所有设备记录
+    QMap<QString, DeviceRecord> devices = deviceDataStore->getAllDevices();
+
+    bool isSaveToFile = false;
+    for (auto it = devices.begin(); it != devices.end(); ++it) {
+        DeviceRecord &rec = it.value();
+
+
+        // 照明节能设备（JNZM_D）且为无人状态,并且链接状态
+        if (rec.deviceId == JNZM_D && rec.flag == 1 && rec.connectedStatus) {
+            // 计算从上次更新到现在的间隔（小时）
+            QDateTime currentTime = QDateTime::currentDateTime();
+            double hours = rec.lastUpdate.secsTo(currentTime) / 3600.0;
+            if (hours <= 0) continue;
+
+            // 节约电量
+            double savedEnergy;
+            double PW;
+            if(rec.power <= 0)
+            {
+                PW = rec.current * rec.voltage;
+                savedEnergy = calculationData.calculateEnergySavings(PW,hours);
+            }else
+            {
+                PW = rec.power;
+                savedEnergy = calculationData.calculateEnergySavings(rec.power, hours);
+            }
+
+
+            // 如果有节约量，则存储到月度数据库
+            if (savedEnergy > 0) {
+                isSaveToFile = true;
+                monthlyDataStore->addData(rec.deviceNumber,
+                                          JNZM_D,
+                                          savedEnergy,
+                                          0.0,
+                                          savedEnergy * ELECTRICITY_PRICE,
+                                          savedEnergy * EMISSION_FACTOR);
+
+                deviceDataStore->updateDeviceLastUpdate(rec.deviceNumber);
+
+                qInfo() << "[定时刷新-照明]"
+                        << rec.clientIp
+                        << "  设备:" <<rec.deviceNumber
+                        << "  无人:" << rec.flag
+                        << "  节约电量:" << savedEnergy
+                        << "  功率:" << PW
+                        << "  时间间隔:" << hours * 3600.0;
+            }
+
+        }
+    }
+
+    MonthlyData monthlyAgg = monthlyDataStore->getAggregatedDataByDeviceId(JNZM_D);
+    MonthlyData yearlyAgg = monthlyDataStore->getYearlyAggregatedDataByDeviceId(JNZM_D);
+    emit sig_RefreshAggregatedByDeviceId(JNZM_D, monthlyAgg, yearlyAgg.reducedCO2);
+
+    QVector<double> monthlyCO2 = monthlyDataStore->getMonthlyReducedCO2ByDeviceId(JNZM_D);
+    emit sig_MonthlyCO2DataUpdated(JNZM_D, monthlyCO2);
+
+}
+
+void My_TcpSocket::on_NewConnection()
 {
     QTcpSocket* client = server->nextPendingConnection();
     clients.append(client);
+    qInfo() << "[客户端连接]" << client->peerAddress().toString();
 
-    QObject::connect(client,&QTcpSocket::readyRead,this,&My_TcpSocket::onReadyRead);
-    QObject::connect(client,&QTcpSocket::disconnected,this,&My_TcpSocket::onDisconnect);
+    // 检查这个IP地址是否有绑定设备号，如果有就设置为可以刷新状态
+    deviceDataStore->updateConnectedDevice(client->peerAddress().toString());
+
+    QObject::connect(client,&QTcpSocket::readyRead,this,&My_TcpSocket::on_ReadyRead);
+    QObject::connect(client,&QTcpSocket::disconnected,this,&My_TcpSocket::on_Disconnect);
 }
 
-void My_TcpSocket::onReadyRead()
+void My_TcpSocket::on_ReadyRead()
 {
+    try {
 
-    QByteArray Head = QByteArray::fromHex("AA55");
-    QTcpSocket* client = dynamic_cast<QTcpSocket*>(sender());
+        QTcpSocket* client = dynamic_cast<QTcpSocket*>(sender());
+        QByteArray buf;
+        //读取客户端消息，
+        buf = client->readAll();
 
-    QByteArray buf;
-    //读取客户端消息，
-    buf = client->readAll();
-
-    if(buf.isEmpty())
-    {
-        qDebug() << "[onReadyRead]-接受信息失败";
-        return;
-    }
-    qDebug() << QString("[%1]--%2--消息：{%3}").arg(QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss"))
-                .arg(client->peerAddress().toString())
-                .arg(QString::fromLocal8Bit(buf.toHex().toUpper()));
-
-
-    QByteArray DataHead = buf.left(2);
-    if(DataHead != Head)
-    {
-        qDebug() << "[onReadyRead]-头文件检测失败！";
-        DataHead.clear();
-        return;
-    }
-
-    Pack clientPack;
-    clientPack.appendData(buf);
-
-    //创建JSon存储格式
-    PowerData currentData;
-    if(clientPack.parsePacket(currentData))
-    {
-        DeviceRecord lastData= deviceDataStore->getDeviceByNumber(currentData.deviceNumber);
-
-        // 找到设备消息才去计算和保存计算结果
-        bool shouldCalculate = false;
-        if (currentData.deviceId == CNG_D) {
-            shouldCalculate = true;
-        } else if(!lastData.deviceNumber.isEmpty())
+        if(buf.isEmpty())
         {
-            shouldCalculate = true;
+            qWarning() << QString("%1-接受信息失败").arg(client->peerAddress().toString());
+            return;
+        }
+        qInfo() <<"[新消息]"
+               << client->peerAddress().toString()
+               << QString::fromLocal8Bit(buf.toHex().toUpper());
+
+        QByteArray Head = QByteArray::fromHex("AA55");
+        QByteArray DataHead = buf.left(2);
+        if(DataHead != Head)
+        {
+            qWarning("头文件检测失败！") ;
+            DataHead.clear();
+            return;
         }
 
+        // 创建JSon存储格式
+        PowerData currentData;
+        // 解析消息
+        Pack clientPack;
+        clientPack.appendData(buf);
+        QString clientIp = client->peerAddress().toString();
 
-        if (shouldCalculate)
+        if(clientPack.parsePacket(currentData,clientIp))
         {
-            switch(currentData.deviceId)
+            qInfo() << "[数据解析]"
+                    << currentData.ip
+                    << "  设备类型:" << currentData.deviceId
+                    << "  设备号:" << currentData.deviceNumber
+                    << "  标志:" << currentData.flag
+                    << "  功率:" << (currentData.power > 0 ? currentData.power : currentData.voltage * currentData.current)
+                    << "  时间:" << currentData.timestamp.toString("yyyy-MM-dd hh-mm-ss");
+
+            DeviceRecord lastData = deviceDataStore->getDeviceByNumber(currentData.deviceNumber);
+
+            if(deviceDataStore->getDeviceByCIp(currentData.ip).deviceNumber.isEmpty())
             {
-            case CNG_D:{
-
-                // CNG_D 使用储能柜协议
-
-                bool hasSavedData = parsingData_CNG(lastData, currentData);
-
-                // 先保存当前数据（更新电压、电流等实时数据）
-                // updateDevice 会保留已有的 isInSavingMode 状态
-                deviceDataStore->updateDevice(currentData);
-
-                // 关键：将 calculate_CNG 修改后的状态同步回 deviceDataStore
-                // lastData 已被 calculate_CNG 修改（进入或退出节约模式）
-                deviceDataStore->updateSavingState(
-                            currentData.deviceNumber,
-                            lastData.isInSavingMode,
-                            lastData.savingStartEnergy,
-                            lastData.savingStartTime
-                            );
-
-                if (hasSavedData) {
-                    emit sig_RefreshAggregatedByDeviceId(CNG_D,
-                                                         monthlyDataStore->getAggregatedDataByDeviceId(CNG_D),
-                                                         monthlyDataStore->getYearlyAggregatedDataByDeviceId(CNG_D).reducedCO2);
-
-                    QVector<double> monthlyCO2 = monthlyDataStore->getMonthlyReducedCO2ByDeviceId(CNG_D);
-                    emit sig_MonthlyCO2DataUpdated(CNG_D, monthlyCO2);
-                }
-                break;
+                qDebug() << "添加ip和设备号的QMap" << QString("%1:%2").arg(currentData.ip).arg(currentData.deviceNumber);
+                deviceDataStore->appendIpToDevice(currentData.ip,currentData.deviceNumber);
             }
 
-            case JNZM_D:{
-                if(parsingData_ZM(lastData, currentData))
+            // 找到设备消息才去计算和保存计算结果
+            bool shouldCalculate = false;
+            if (currentData.deviceId == CNG_D) {
+                shouldCalculate = true;
+            } else if(!lastData.deviceNumber.isEmpty())
+            {
+                shouldCalculate = true;
+            }
+
+
+            if (shouldCalculate)
+            {
+                switch(currentData.deviceId)
                 {
-                    emit sig_RefreshAggregatedByDeviceId(JNZM_D,
-                                                         monthlyDataStore->getAggregatedDataByDeviceId(JNZM_D),
-                                                         monthlyDataStore->getYearlyAggregatedDataByDeviceId(JNZM_D).reducedCO2);
-                    // 发射12个月减碳数据
-                    QVector<double> monthlyCO2 = monthlyDataStore->getMonthlyReducedCO2ByDeviceId(JNZM_D);
-                    emit sig_MonthlyCO2DataUpdated(JNZM_D, monthlyCO2);
+                case CNG_D:{
+
+                    // CNG_D 使用储能柜协议
+                    if(parsingData_CNG(lastData, currentData))
+                    {
+                        qInfo() << (QString("解析%1的储能柜节能数据").arg(currentData.deviceNumber));
+
+
+
+                        // 更新月节约能量
+                        deviceDataStore->updateSavingState(
+                                    currentData.deviceNumber,
+                                    lastData.isInSavingMode,
+                                    lastData.savingStartEnergy,
+                                    lastData.savingStartTime
+                                    );
+
+                        emit sig_RefreshAggregatedByDeviceId(CNG_D,
+                                                             monthlyDataStore->getAggregatedDataByDeviceId(CNG_D),
+                                                             monthlyDataStore->getYearlyAggregatedDataByDeviceId(CNG_D).reducedCO2);
+
+                        QVector<double> monthlyCO2 = monthlyDataStore->getMonthlyReducedCO2ByDeviceId(CNG_D);
+                        emit sig_MonthlyCO2DataUpdated(CNG_D, monthlyCO2);
+                    }
+                    // 保存当前原始数据
+                    deviceDataStore->updateDevice(currentData);
+                    break;
                 }
-                break;
+
+                case JNZM_D:{
+                    if(parsingData_ZM(lastData, currentData))
+                    {
+                        emit sig_RefreshAggregatedByDeviceId(JNZM_D,
+                                                             monthlyDataStore->getAggregatedDataByDeviceId(JNZM_D),
+                                                             monthlyDataStore->getYearlyAggregatedDataByDeviceId(JNZM_D).reducedCO2);
+                        // 发射12个月减碳数据
+                        QVector<double> monthlyCO2 = monthlyDataStore->getMonthlyReducedCO2ByDeviceId(JNZM_D);
+                        emit sig_MonthlyCO2DataUpdated(JNZM_D, monthlyCO2);
+
+                    }
+                    deviceDataStore->updateDevice(currentData);
+                    break;
+                }
+
+
+                case JNKT_D:{
+                    break;
+                }
+
+
+                }
+
             }
-
-
-            case JNKT_D:{
-                break;
-            }
-
-
-            }
-
         }
-    }
-    // 对于非CNG设备，在这里更新
-    if (currentData.deviceId != CNG_D) {
-        deviceDataStore->updateDevice(currentData);
+
+    } catch (const std::exception &e) {
+        qWarning() << "未处理异常:" << e.what();
+        return ;
+
+    } catch (...) {
+        qWarning() << "未知异常";
+        return ;
     }
 
 }
-void My_TcpSocket::onDisconnect()
+void My_TcpSocket::on_Disconnect()
 {
     QTcpSocket* client = dynamic_cast<QTcpSocket*>(sender());
+    qInfo() << "[断开连接]" << client->peerAddress().toString();
+    deviceDataStore->updateDisconnectedDevice(client->peerAddress().toString());
     clients.removeAll(client);
     client->deleteLater();
 }
-
-

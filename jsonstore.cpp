@@ -12,6 +12,11 @@ JsonStore::~JsonStore()
     saveToFile();
 }
 
+void JsonStore::appendIpToDevice(QString ip, QString deviceNumber)
+{
+    m_ipToDevice.insert(ip,deviceNumber);
+}
+
 void JsonStore::updateDevice(const PowerData &record)
 {
     QString key = record.deviceNumber;
@@ -25,6 +30,7 @@ void JsonStore::updateDevice(const PowerData &record)
         double oldSavingStartEnergy = existing.savingStartEnergy;
         QDateTime oldSavingStartTime = existing.savingStartTime;
 
+        existing.clientIp = record.ip;
         existing.server = record.server;
         existing.deviceId = record.deviceId;
         existing.funcCode = record.funcCode;
@@ -58,13 +64,15 @@ void JsonStore::updateDevice(const PowerData &record)
         existing.savingStartEnergy = oldSavingStartEnergy;
         existing.savingStartTime = oldSavingStartTime;
 
-        qDebug() << "[Store] 更新设备:" << key << "第" << existing.updateCount << "次更新";
+        qInfo() << "[更新设备] "<< key
+                << "更新次数:"  << existing.updateCount;
     } else {
         // 新增设备
         DeviceRecord newRecord;
 
         newRecord.deviceNumber = record.deviceNumber;
         newRecord.cardNumber = record.cardNumber;
+        newRecord.clientIp = record.ip;
         newRecord.server = record.server;
         newRecord.deviceId = record.deviceId;
         newRecord.funcCode = record.funcCode;
@@ -99,8 +107,7 @@ void JsonStore::updateDevice(const PowerData &record)
 
         m_devices.insert(key, newRecord);
 
-        qDebug() << "[Store] 新增设备:" << key;
-
+        qInfo() << "[新增设备]" << key;
     }
 
     emit deviceUpdated(key);
@@ -118,9 +125,40 @@ void JsonStore::updateSavingState(const QString &deviceNumber, bool isInSavingMo
         existing.isInSavingMode = isInSavingMode;
         existing.savingStartEnergy = savingStartEnergy;
         existing.savingStartTime = savingStartTime;
-        qDebug() << "[Store] 更新节约状态:" << deviceNumber
+        qDebug() << "更新节约状态:" << deviceNumber
                  << "节约中:" << isInSavingMode
                  << "起始电能:" << savingStartEnergy;
+    }
+}
+
+DeviceRecord JsonStore::getDeviceByCIp(QString ip)
+{
+    if (m_ipToDevice.contains(ip)) {
+        QString deviceNumber = m_ipToDevice.value(ip);
+        return m_devices.value(deviceNumber);
+    }
+    return DeviceRecord();
+}
+
+void JsonStore::updateDisconnectedDevice(QString ip)
+{
+    DeviceRecord last = getDeviceByCIp(ip);
+    if(!last.deviceNumber.isEmpty())
+    {
+        last.connectedStatus = false;
+        m_devices.insert(last.deviceNumber,last);
+    }
+
+}
+
+void JsonStore::updateConnectedDevice(QString ip)
+{
+    DeviceRecord last = getDeviceByCIp(ip);
+    if(!last.deviceNumber.isEmpty())
+    {
+        last.connectedStatus = true;
+        last.lastUpdate = QDateTime::currentDateTime();
+        m_devices.insert(last.deviceNumber,last);
     }
 }
 
@@ -150,7 +188,7 @@ QMap<QString, DeviceRecord> JsonStore::getAllDevices() const
 void JsonStore::removeDevice(const QString &deviceNumber)
 {
     if (m_devices.remove(deviceNumber) > 0) {
-        qDebug() << "[Store] 删除设备:" << deviceNumber;
+        qDebug() << " 删除设备:" << deviceNumber;
         saveToFile();
     }
 }
@@ -158,7 +196,7 @@ void JsonStore::removeDevice(const QString &deviceNumber)
 void JsonStore::clearAll()
 {
     m_devices.clear();
-    qDebug() << "[Store] 清空所有设备数据";
+    qDebug() << " 清空所有设备数据";
     saveToFile();
 }
 
@@ -174,7 +212,7 @@ bool JsonStore::saveToFile()
 
     QFile file(m_filePath);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        qDebug() << "[Store] 保存失败:" << file.errorString();
+        qDebug() << " 保存失败:" << file.errorString();
         emit dataSaved(false);
         return false;
     }
@@ -182,7 +220,8 @@ bool JsonStore::saveToFile()
     file.write(data);
     file.close();
 
-    qDebug() << "[Store] 已保存" << m_devices.size() << "条记录到" << m_filePath;
+    /*qDebug() << "[全数据文件保存]" << m_devices.size()
+             << "条记录保存到" << m_filePath;*/
     emit dataSaved(true);
     return true;
 }
@@ -191,12 +230,12 @@ bool JsonStore::loadFromFile()
 {
     QFile file(m_filePath);
     if (!file.exists()) {
-        qDebug() << "[Store] 数据文件不存在，将创建新文件";
+        qDebug() << " 数据文件不存在，将创建新文件";
         return false;
     }
 
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        qDebug() << "[Store] 加载失败:" << file.errorString();
+        qDebug() << " 加载失败:" << file.errorString();
         return false;
     }
 
@@ -205,7 +244,7 @@ bool JsonStore::loadFromFile()
 
     QJsonDocument doc = QJsonDocument::fromJson(data);
     if (!doc.isArray()) {
-        qDebug() << "[Store] 数据格式错误";
+        qDebug() << " 数据格式错误";
         return false;
     }
 
@@ -214,14 +253,30 @@ bool JsonStore::loadFromFile()
         if (val.isObject()) {
             DeviceRecord rec = DeviceRecord::fromJson(val.toObject());
             m_devices.insert(rec.deviceNumber, rec);
+
+            qDebug() << rec.clientIp;
+            if(!rec.clientIp.isEmpty())
+            {
+                m_ipToDevice.insert(rec.clientIp,rec.deviceNumber);
+            }
         }
     }
 
-    qDebug() << "[Store] 已加载" << m_devices.size() << "条记录";
+    qInfo() << "[加载文件]"
+            << "  设备数量:" << m_devices.size()
+            << "  ip绑定数量:" << m_ipToDevice.size();
     return true;
 }
 
 int JsonStore::deviceCount() const
 {
     return m_devices.size();
+}
+
+void JsonStore::updateDeviceLastUpdate(const QString &deviceNumber)
+{
+    if (m_devices.contains(deviceNumber)) {
+        m_devices[deviceNumber].lastUpdate = QDateTime::currentDateTime();
+        saveToFile();
+    }
 }

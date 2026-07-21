@@ -601,7 +601,7 @@ font-weight: bold;</string>
            <string>--</string>
           </property>
           <property name="alignment">
-           <set>Qt::AlignCenter</set>
+           <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
           </property>
           <property name="readOnly">
            <bool>true</bool>
@@ -860,7 +860,7 @@ font-weight: bold;</string>
            <string>--</string>
           </property>
           <property name="alignment">
-           <set>Qt::AlignCenter</set>
+           <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
           </property>
           <property name="readOnly">
            <bool>true</bool>

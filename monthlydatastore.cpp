@@ -1,4 +1,3 @@
-
 #include "monthlydatastore.h"
 
 MonthlyDataStore::MonthlyDataStore(const QString &dataDir, QObject *parent)
@@ -24,12 +23,12 @@ MonthlyDataStore::~MonthlyDataStore()
 }
 
 void MonthlyDataStore::addData(const QString &deviceNumber,
-                                const QString &yearMonth,
+                               const QString &yearMonth,
                                int deviceId,
                                double savedEnergy,
-                                double greenEnergy,
-                                double savedCost,
-                                double reducedCO2)
+                               double greenEnergy,
+                               double savedCost,
+                               double reducedCO2)
 {
     // 1. 加载已有数据（如果不在缓存中）
     if (!m_cache.contains(deviceNumber) || !m_cache[deviceNumber].contains(yearMonth)) {
@@ -57,25 +56,20 @@ void MonthlyDataStore::addData(const QString &deviceNumber,
     // 4. 保存到文件
     save(deviceNumber, yearMonth);
 
-    qDebug() << "[Store]" << deviceNumber << yearMonth
-             << "deviceId:" << QString("0x%1").arg(deviceId, 2, 16, QChar('0')).toUpper()
+    /*qDebug() << "[节约文件保存]" << deviceNumber << yearMonth
+             << "设备类型:" << QString("0x%1").arg(deviceId, 2, 16, QChar('0')).toUpper()
              << "节约用电:" << data.savedEnergy << "KWh"
              << "绿电:" << data.greenEnergy << "KWh"
              << "节约成本:" << data.savedCost << "元"
-             << "减碳:" << data.reducedCO2 << "Kg";
-
-
-    emit dataAdded(deviceNumber, yearMonth , deviceId);
-
-    emit aggregatedDataUpdated(deviceId, getAggregatedDataByDeviceId(deviceId), getYearlyAggregatedDataByDeviceId(deviceId).reducedCO2);
+             << "减碳:" << data.reducedCO2 << "Kg";*/
 }
 
 void MonthlyDataStore::addData(const QString &deviceNumber,
                                int deviceId,
-                                double savedEnergy,
-                                double greenEnergy,
-                                double savedCost,
-                                double reducedCO2)
+                               double savedEnergy,
+                               double greenEnergy,
+                               double savedCost,
+                               double reducedCO2)
 {
     addData(deviceNumber, getCurrentYearMonth(), deviceId, savedEnergy, greenEnergy, savedCost, reducedCO2);
 }
@@ -354,52 +348,52 @@ bool MonthlyDataStore::save(const QString &deviceNumber, const QString &yearMont
 QVector<double> MonthlyDataStore::getMonthlyReducedCO2ByDeviceId(int deviceId, int year) const
 {
     // 如果 year=0，使用当前年份
-        if (year == 0) {
-            year = QDateTime::currentDateTime().date().year();
+    if (year == 0) {
+        year = QDateTime::currentDateTime().date().year();
+    }
+
+    // 初始化12个月为0
+    QVector<double> monthlyCO2(12, 0.0);
+
+    // 步骤1：收集所有设备号
+    QStringList deviceNumbers;
+    QDir rootDir(m_dataDir);
+    if (rootDir.exists()) {
+        deviceNumbers = rootDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+    }
+
+    // 步骤2：加载所有设备的所有月份数据
+    MonthlyDataStore *nonConst = const_cast<MonthlyDataStore*>(this);
+    for (const QString &deviceNumber : deviceNumbers) {
+        QDir dir(m_dataDir + "/" + deviceNumber);
+        if (dir.exists()) {
+            for (const QString &file : dir.entryList(QStringList() << "*.json", QDir::Files)) {
+                QString ym = file;
+                ym = ym.replace(".json", "");
+                nonConst->loadFromFile(deviceNumber, ym);
+            }
         }
+    }
 
-        // 初始化12个月为0
-        QVector<double> monthlyCO2(12, 0.0);
+    // 步骤3：遍历所有设备，累加指定 deviceId 的每月减碳
+    for (auto it = m_cache.begin(); it != m_cache.end(); ++it) {
+        const QMap<QString, MonthlyData> &deviceData = it.value();
+        for (auto jt = deviceData.begin(); jt != deviceData.end(); ++jt) {
+            const QString &yearMonth = jt.key();  // 如 "2026-05"
+            const MonthlyData &data = jt.value();
 
-        // 步骤1：收集所有设备号
-        QStringList deviceNumbers;
-        QDir rootDir(m_dataDir);
-        if (rootDir.exists()) {
-            deviceNumbers = rootDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
-        }
-
-        // 步骤2：加载所有设备的所有月份数据
-        MonthlyDataStore *nonConst = const_cast<MonthlyDataStore*>(this);
-        for (const QString &deviceNumber : deviceNumbers) {
-            QDir dir(m_dataDir + "/" + deviceNumber);
-            if (dir.exists()) {
-                for (const QString &file : dir.entryList(QStringList() << "*.json", QDir::Files)) {
-                    QString ym = file;
-                    ym = ym.replace(".json", "");
-                    nonConst->loadFromFile(deviceNumber, ym);
+            // 检查年份和 deviceId
+            if (data.deviceId == deviceId && yearMonth.startsWith(QString::number(year))) {
+                // 提取月份（"2026-05" → 5）
+                int month = yearMonth.split("-")[1].toInt();
+                if (month >= 1 && month <= 12) {
+                    monthlyCO2[month - 1] += data.reducedCO2;
                 }
             }
         }
+    }
 
-        // 步骤3：遍历所有设备，累加指定 deviceId 的每月减碳
-        for (auto it = m_cache.begin(); it != m_cache.end(); ++it) {
-            const QMap<QString, MonthlyData> &deviceData = it.value();
-            for (auto jt = deviceData.begin(); jt != deviceData.end(); ++jt) {
-                const QString &yearMonth = jt.key();  // 如 "2026-05"
-                const MonthlyData &data = jt.value();
-
-                // 检查年份和 deviceId
-                if (data.deviceId == deviceId && yearMonth.startsWith(QString::number(year))) {
-                    // 提取月份（"2026-05" → 5）
-                    int month = yearMonth.split("-")[1].toInt();
-                    if (month >= 1 && month <= 12) {
-                        monthlyCO2[month - 1] += data.reducedCO2;
-                    }
-                }
-            }
-        }
-
-        return monthlyCO2;
+    return monthlyCO2;
 }
 
 QString MonthlyDataStore::getFilePath(const QString &deviceNumber, const QString &yearMonth) const

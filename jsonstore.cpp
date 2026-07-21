@@ -254,7 +254,6 @@ bool JsonStore::loadFromFile()
             DeviceRecord rec = DeviceRecord::fromJson(val.toObject());
             m_devices.insert(rec.deviceNumber, rec);
 
-            qDebug() << rec.clientIp;
             if(!rec.clientIp.isEmpty())
             {
                 m_ipToDevice.insert(rec.clientIp,rec.deviceNumber);

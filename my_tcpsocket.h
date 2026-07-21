@@ -28,6 +28,8 @@ public:
 
     bool parsingData_CNG(DeviceRecord &lastData, const PowerData &currentData);
 
+    void processPacket(QTcpSocket* client, const QByteArray &packet);
+
 signals:
     void sig_ReceivedData_KT(QByteArray KT);
 
@@ -51,13 +53,14 @@ private slots:
 
 
 private:
-    QTcpServer *server;
-    QList<QTcpSocket*> clients;
-    QTimer *refreshTheInterface_10s;
+    QTcpServer *server;                             // 服务器
+    QList<QTcpSocket*> clients;                     // 存放客户端
+    QMap<QTcpSocket*, QByteArray> clientBuffers;    // 存放各客户端的缓冲数据
+    QTimer *refreshTheInterface_10s;                // 10S更新界面定时器
 
-    JsonStore *deviceDataStore;
-    MonthlyDataStore *monthlyDataStore;
-    Calculation calculationData;
+    JsonStore *deviceDataStore;                     // 存放完整数据
+    MonthlyDataStore *monthlyDataStore;             // 存放月节约数据
+    Calculation calculationData;                    // 计算数据
 };
 
 #endif // TCPSOCKET_H

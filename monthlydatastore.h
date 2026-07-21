@@ -19,7 +19,6 @@ struct MonthlyData {
     QString yearMonth;          // 年月，如 "2026-07"
     int deviceId;               // 设备ID
 
-
     double savedEnergy;         // 节约用电 (KWh)
     double greenEnergy;         // 绿电数据 (KWh)
     double savedCost;           // 节约成本 (元)

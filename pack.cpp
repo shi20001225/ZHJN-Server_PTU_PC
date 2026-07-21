@@ -14,40 +14,35 @@ bool Pack::appendData(const QByteArray &data)
 
 bool Pack::parsePacket(PowerData& parseData, QString& ip)
 {
-    while(!m_buffer.isEmpty() || m_buffer.size() >= 20)
-    {
-        int headPos = findFrameHead();
-        if (headPos < 0) {
-            m_buffer.clear();
-            return false;
-        }
-
-        if (headPos > 0) {
-            m_buffer.remove(0, headPos);
-        }
-
-        if (m_buffer.size() < 6) {
-            return false;
-        }
-        // 先读设备ID位判断包类型
-        uint8_t devId = static_cast<uint8_t>(m_buffer.at(3));
-        switch(devId)
-        {
-            case CNG_D:
-                parseCNGDevice();
-                break;
-
-            case JNZM_D:
-                parseJNZMDevice();
-                break;
-
-            case JNKT_D:
-                parseJNKTDevice();
-                break;
-        }
-        m_buffer.clear();
-
+    if (m_buffer.size() < 6) {
+        out_pack.isValid = false;
+        out_pack.errorMsg = "包长度不足";
+        return false;
     }
+
+    uint8_t devId = static_cast<uint8_t>(m_buffer.at(3));
+    bool parseResult = false;
+
+    switch(devId) {
+        case CNG_D:
+            parseResult = parseCNGDevice();
+            break;
+        case JNZM_D:
+            parseResult = parseJNZMDevice();
+            break;
+        case JNKT_D:
+            parseResult = parseJNKTDevice();
+            break;
+        default:
+            out_pack.isValid = false;
+            out_pack.errorMsg = QString("未知设备ID: 0x%1").arg(devId, 2, 16, QChar('0'));
+            return false;
+    }
+
+    if (!parseResult) {
+        return false;
+    }
+
     out_pack.ip = ip;
     out_pack.connectedStatus = true;
     parseData = out_pack;
@@ -319,7 +314,29 @@ bool Pack::parseCNGDevice()
 bool Pack::parseJNZMDevice()
 {
     // qDebug()<< "进入节能照明解析";
-    if(m_buffer.at(5) != 0)
+    if (m_buffer.size() < 6) {
+        out_pack.isValid = false;
+        out_pack.errorMsg = "JNZM包长度不足，无法判断标志位";
+        return false;
+    }
+
+    uint8_t flag = static_cast<uint8_t>(m_buffer.at(5));
+    int expectedLen = (flag == 0) ? 26 : 61;
+
+    if (m_buffer.size() < expectedLen) {
+        out_pack.isValid = false;
+        out_pack.errorMsg = QString("JNZM包长度不足，期望%1，实际%2").arg(expectedLen).arg(m_buffer.size());
+        return false;
+    }
+
+    QByteArray tail = m_buffer.right(2);
+    if (tail != QByteArray("\x55\xAA", 2)) {
+        out_pack.isValid = false;
+        out_pack.errorMsg = QString("JNZM包尾错误: %1").arg(QString::fromLocal8Bit(tail.toHex().toUpper()));
+        qDebug() << out_pack.errorMsg;
+    }
+
+    if(flag != 0)
     {
         parseNoonePacket();
     }
